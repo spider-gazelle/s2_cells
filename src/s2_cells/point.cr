@@ -1,4 +1,4 @@
-class S2Cells::S2Point
+class S2Cells::Point
   getter x : Float64
   getter y : Float64
   getter z : Float64
@@ -20,7 +20,7 @@ class S2Cells::S2Point
     end
   end
 
-  def dot_prod(o : S2Point)
+  def dot_prod(o : Point)
     @x * o.x + @y * o.y + @z * o.z
   end
 end

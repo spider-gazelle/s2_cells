@@ -1,4 +1,4 @@
-module S2Cells::S2Base
+module S2Cells::CellBase
   LINEAR_PROJECTION    = 0
   TAN_PROJECTION       = 1
   QUADRATIC_PROJECTION = 2

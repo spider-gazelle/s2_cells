@@ -19,11 +19,11 @@ module S2Cells
         {0x1dcc469991555555_u64, -34.055420593, 18.551140038},
         {0xb112966aaaaaaaab_u64, -69.219262171, 49.670072392},
       }.each do |(id, lat, lon)|
-        point = S2LatLon.new(lat, lon).to_point
-        cell = S2CellId.from_point(point)
+        point = LatLon.new(lat, lon).to_point
+        cell = CellId.from_point(point)
         cell.id.should eq(id)
 
-        S2CellId.from_lat_lon(lat, lon).id.should eq(id)
+        CellId.from_lat_lon(lat, lon).id.should eq(id)
         S2Cells.at(lat, lon).id.should eq(id)
       end
     end
@@ -63,7 +63,7 @@ module S2Cells
         {"aa05238e7bd3ee7c", 0xaa05238e7bd3ee7c_u64},
         {"48a23db9c2963e5b", 0x48a23db9c2963e5b_u64},
       }.each do |(token, id)|
-        cell = S2CellId.from_token(token)
+        cell = CellId.from_token(token)
         cell.id.should eq id
         cell.to_token.should eq token
       end

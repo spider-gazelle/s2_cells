@@ -9,11 +9,11 @@ module S2Cells
   end
 
   def self.at(lat : Float64, lon : Float64)
-    S2CellId.from_lat_lon(lat, lon)
+    CellId.from_lat_lon(lat, lon)
   end
 end
 
-require "./s2_cells/s2_cell_base"
-require "./s2_cells/s2_point"
-require "./s2_cells/s2_cell_id"
-require "./s2_cells/s2_lat_lon"
+require "./s2_cells/cell_base"
+require "./s2_cells/point"
+require "./s2_cells/cell_id"
+require "./s2_cells/lat_lon"

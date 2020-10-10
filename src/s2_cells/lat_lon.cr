@@ -1,4 +1,4 @@
-class S2Cells::S2LatLon
+class S2Cells::LatLon
   def initialize(lat_degrees : Float64, lon_degrees : Float64)
     @lat = lat_degrees * Math::PI / 180.0
     @lon = lon_degrees * Math::PI / 180.0
@@ -11,12 +11,12 @@ class S2Cells::S2LatLon
     phi = @lat
     theta = @lon
     cosphi = Math.cos(phi)
-    S2Point.new(Math.cos(theta) * cosphi, Math.sin(theta) * cosphi, Math.sin(phi))
+    Point.new(Math.cos(theta) * cosphi, Math.sin(theta) * cosphi, Math.sin(phi))
   end
 
-  def to_s2_id(level)
-    S2CellId.from_point(to_point)
+  def to_token(level = 30)
+    CellId.from_point(to_point)
       .parent(level)
-      .id
+      .to_token
   end
 end

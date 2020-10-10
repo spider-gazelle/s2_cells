@@ -1,5 +1,5 @@
-class S2Cells::S2CellId
-  include S2Base
+class S2Cells::CellId
+  include CellBase
   getter id : UInt64
 
   def initialize(@id)
@@ -22,25 +22,25 @@ class S2Cells::S2CellId
 
   def parent(level)
     new_lsb = lsb_for_level(level)
-    s2 = S2CellId.new((@id & ((~new_lsb) &+ 1)) | new_lsb)
+    s2 = CellId.new((@id & ((~new_lsb) &+ 1)) | new_lsb)
 
     raise InvalidLevel.new(level) unless valid?(s2.id)
     s2
   end
 
   def prev
-    S2CellId.new(@id - (lsb << 1))
+    CellId.new(@id - (lsb << 1))
   end
 
   def next
-    S2CellId.new(@id + (lsb << 1))
+    CellId.new(@id + (lsb << 1))
   end
 
   def level
     return MAX_LEVEL if leaf?
 
-    x = (@id & 0xffffffff_u64)
     level = -1
+    x = (@id & 0xffffffff_u64)
 
     if x != 0
       level += 16
@@ -48,7 +48,8 @@ class S2Cells::S2CellId
       x = ((@id >> 32) & 0xffffffff_u64)
     end
 
-    x &= -x
+    # 2s compliment
+    x &= ((~x) &+ 1)
 
     level += 8 unless (x & 0x00005555_u64).zero?
     level += 4 unless (x & 0x00550055_u64).zero?
@@ -58,15 +59,15 @@ class S2Cells::S2CellId
   end
 
   def self.from_lat_lon(lat : Float64, lon : Float64)
-    from_point S2LatLon.new(lat, lon).to_point
+    from_point LatLon.new(lat, lon).to_point
   end
 
-  def self.from_point(p : S2Point)
+  def self.from_point(p : Point)
     face, u, v = xyz_to_face_uv(p)
     i = st_to_ij(uv_to_st(u))
     j = st_to_ij(uv_to_st(v))
 
-    S2CellId.new(from_face_ij(face, i, j))
+    CellId.new(from_face_ij(face, i, j))
   end
 
   def self.from_face_ij(face : UInt64, i : UInt64, j : UInt64)
@@ -85,7 +86,7 @@ class S2Cells::S2CellId
     n * 2 + 1
   end
 
-  def self.xyz_to_face_uv(p : S2Point) : Tuple(UInt64, Float64, Float64)
+  def self.xyz_to_face_uv(p : Point) : Tuple(UInt64, Float64, Float64)
     face = p.largest_abs_component
 
     pface = case face
@@ -109,7 +110,7 @@ class S2Cells::S2CellId
     {0_u64, {MAX_SIZE - 1_u64, (MAX_SIZE * s).floor.to_u64}.min}.max
   end
 
-  def self.valid_face_xyz_to_uv(face : UInt64, p : S2Point)
+  def self.valid_face_xyz_to_uv(face : UInt64, p : Point)
     raise "invalid face xyz" unless p.dot_prod(face_uv_to_xyz(face, 0.0, 0.0)) > 0
 
     case face
@@ -124,12 +125,12 @@ class S2Cells::S2CellId
 
   def self.face_uv_to_xyz(face : UInt64, u : Float64, v : Float64)
     case face
-    when 0 then S2Point.new(1_f64, u, v)
-    when 1 then S2Point.new(-u, 1_f64, v)
-    when 2 then S2Point.new(-u, -v, 1_f64)
-    when 3 then S2Point.new(-1_f64, -v, -u)
-    when 4 then S2Point.new(v, -1_f64, -u)
-    else        S2Point.new(v, u, -1_f64)
+    when 0 then Point.new(1_f64, u, v)
+    when 1 then Point.new(-u, 1_f64, v)
+    when 2 then Point.new(-u, -v, 1_f64)
+    when 3 then Point.new(-1_f64, -v, -u)
+    when 4 then Point.new(v, -1_f64, -u)
+    else        Point.new(v, u, -1_f64)
     end
   end
 

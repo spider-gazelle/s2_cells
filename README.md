@@ -26,8 +26,12 @@ require "s2_cells"
 
 lat = -33.870456
 lon = 151.208889
+level = 24
 
-cell = S2Cells.at(lat, lon)
+cell = S2Cells.at(lat, lon).parent(level)
 token = cell.to_token # => "3ba32f81"
+
+# Or a little more direct
+S2Cells::LatLon.new(lat, lon).to_token(level)
 
 ```
