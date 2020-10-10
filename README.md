@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.com/spider-gazelle/s2_cells.svg?branch=master)](https://travis-ci.com/github/spider-gazelle/s2_cells)
 
-Maps Lat Long coordinates to S2 Cells.
+Maps Lat Lon coordinates to S2 Cells.
 Useful for things like storing points [in InfluxDB](https://docs.influxdata.com/influxdb/v2.0/reference/flux/stdlib/experimental/geo/#geo-schema-requirements)
 
 ## Installation
