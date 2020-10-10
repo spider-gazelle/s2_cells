@@ -11,7 +11,7 @@ Useful for things like storing points [in InfluxDB](https://docs.influxdata.com/
 
    ```yaml
    dependencies:
-     coap:
+     s2_cells:
        github: spider-gazelle/s2_cells
    ```
 
