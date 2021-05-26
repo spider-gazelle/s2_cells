@@ -1,6 +1,6 @@
 # Crystal Lang S2 Cells
 
-[![Build Status](https://travis-ci.com/spider-gazelle/s2_cells.svg?branch=master)](https://travis-ci.com/github/spider-gazelle/s2_cells)
+[![CI](https://github.com/spider-gazelle/s2_cells/actions/workflows/ci.yml/badge.svg)](https://github.com/spider-gazelle/s2_cells/actions/workflows/ci.yml)
 
 Maps Lat Lon coordinates to S2 Cells.
 Useful for things like storing points [in InfluxDB](https://docs.influxdata.com/influxdb/v2.0/reference/flux/stdlib/experimental/geo/#geo-schema-requirements)
