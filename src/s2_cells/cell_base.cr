@@ -5,19 +5,22 @@ module S2Cells::CellBase
 
   MAX_LEVEL   = 30
   NUM_FACES   =  6
+  FACE_BITS   =  3
   POS_BITS    = 2 * MAX_LEVEL + 1
   MAX_SIZE    = 1_u64 << MAX_LEVEL
+  MAX_SIZE_I  = MAX_SIZE.to_i128
   SWAP_MASK   = 0x01_u64
   INVERT_MASK = 0x02_u64
   LOOKUP_BITS =    4_u64
-  POS_TO_OR   = {SWAP_MASK, 0_u64, 0_u64, INVERT_MASK | SWAP_MASK}
-  POS_TO_IJ   = { {0_u64, 1_u64, 3_u64, 2_u64},
-                 {0_u64, 2_u64, 3_u64, 1_u64},
-                 {3_u64, 2_u64, 0_u64, 1_u64},
-                 {3_u64, 1_u64, 0_u64, 2_u64} }
 
-  LOOKUP_POS = Array.new((1 << (2 * LOOKUP_BITS + 2)), 0_u64)
-  LOOKUP_IJ  = Array.new((1 << (2 * LOOKUP_BITS + 2)), 0_u64)
+  POS_TO_ORIENTATION = {SWAP_MASK, 0_u64, 0_u64, INVERT_MASK | SWAP_MASK}
+  POS_TO_IJ          = { {0_u64, 1_u64, 3_u64, 2_u64},
+                        {0_u64, 2_u64, 3_u64, 1_u64},
+                        {3_u64, 2_u64, 0_u64, 1_u64},
+                        {3_u64, 1_u64, 0_u64, 2_u64} }
+
+  LOOKUP_POS = Array.new((1_u64 << (2 * LOOKUP_BITS + 2)), 0_u64)
+  LOOKUP_IJ  = Array.new((1_u64 << (2 * LOOKUP_BITS + 2)), 0_u64)
 
   def self.lookup_cells(level, i, j, orig_orientation, pos, orientation)
     return lookup_bits(i, j, orig_orientation, pos, orientation) if level == LOOKUP_BITS
@@ -26,7 +29,7 @@ module S2Cells::CellBase
     4.times do |index|
       lookup_cells(
         level + 1, (i << 1) + (r[index] >> 1), (j << 1) + (r[index] & 1),
-        orig_orientation, (pos << 2) + index, orientation ^ POS_TO_OR[index]
+        orig_orientation, (pos << 2) + index, orientation ^ POS_TO_ORIENTATION[index]
       )
     end
   end

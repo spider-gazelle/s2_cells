@@ -2,6 +2,6 @@ name: s2_cells
 version: 1.0.1
 crystal: ">= 0.36.1"
 
-development_dependencies:
-  ameba:
-    github: veelenga/ameba
+# development_dependencies:
+#  ameba:
+#    github: veelenga/ameba

@@ -69,4 +69,152 @@ module S2Cells
       end
     end
   end
+
+  it "should generate the correct face" do
+    CellId.from_lat_lon(0.0, 0.0).face.should eq 0
+    CellId.from_lat_lon(0.0, 90.0).face.should eq 1
+    CellId.from_lat_lon(90.0, 0.0).face.should eq 2
+    CellId.from_lat_lon(0.0, 180.0).face.should eq 3
+    CellId.from_lat_lon(0.0, -90.0).face.should eq 4
+    CellId.from_lat_lon(-90.0, 0.0).face.should eq 5
+  end
+
+  it "test parent child relationship" do
+    cell_id = CellId.from_face_pos_level(3, 0x12345678_u64, CellId::MAX_LEVEL - 4)
+
+    cell_id.face.should eq 3
+    cell_id.pos.to_s(2).should eq 0x12345700.to_s(2)
+    cell_id.level.should eq(CellId::MAX_LEVEL - 4)
+    cell_id.valid?.should be_true
+    cell_id.leaf?.should be_false
+
+    cell_id.child_begin(cell_id.level + 2).pos.should eq 0x12345610
+    cell_id.child_begin.pos.should eq 0x12345640
+    cell_id.parent.pos.should eq 0x12345400
+    cell_id.parent(cell_id.level - 2).pos.should eq 0x12345000
+
+    cell_id.child_begin.next.next.next.next.should eq cell_id.child_end
+    cell_id.child_begin(CellId::MAX_LEVEL).should eq cell_id.range_min
+    cell_id.child_end(CellId::MAX_LEVEL).should eq cell_id.range_max.next
+
+    # Check that cells are represented by the position of their center
+    # along the Hilbert curve.
+    (cell_id.range_min.id &+ cell_id.range_max.id).should eq(2_u64 &* cell_id.id)
+  end
+
+  it "should be able to switch between lat lang and cell ids" do
+    INVERSE_ITERATIONS.times do
+      cell_id = get_random_cell_id(CellId::MAX_LEVEL)
+      cell_id.leaf?.should be_true
+      cell_id.level.should eq CellId::MAX_LEVEL
+      center = cell_id.to_lat_lon
+      CellId.from_lat_lon(center).id.should eq cell_id.id
+    end
+  end
+
+  it "should be able to switch between tokens and cell ids" do
+    TOKEN_ITERATIONS.times do
+      cell_id = get_random_cell_id
+      token = cell_id.to_token
+      (token.size <= 16).should be_true
+      CellId.from_token(token).id.should eq cell_id.id
+    end
+  end
+
+  it "should be able to obtain neighbours", focus: true do
+    # Check the edge neighbors of face 1.
+    out_faces = {5, 3, 2, 0}
+    face_nbrs = CellId.from_face_pos_level(1, 0, 0).get_edge_neighbors
+    face_nbrs.each_with_index do |face_nbr, i|
+      face_nbr.face?.should be_true
+      face_nbr.face.should eq out_faces[i]?
+    end
+
+    # Check the vertex neighbors of the center of face 2 at level 5.
+    neighbors = CellId.from_point(Point.new(0, 0, 1)).get_vertex_neighbors(5)
+    neighbors.sort!
+    neighbors.each_with_index do |neighbor, i|
+      neighbor.id.should eq(CellId.from_face_ij(
+        2,
+        (1_u64 << 29) - (i < 2 ? 1 : 0),
+        (1_u64 << 29) - (i == 0 || i == 3 ? 1 : 0)
+      ).parent(5).id)
+    end
+
+    neighbors.each_with_index do |neighbor, i|
+      neighbor.should eq(CellId.from_face_ij(
+        2,
+        (1_u64 << 29) - (i < 2 ? 1 : 0),
+        (1_u64 << 29) - (i == 0 || i == 3 ? 1 : 0)
+      ).parent(5))
+    end
+
+    # Check the vertex neighbors of the corner of faces 0, 4, and 5.
+    cell_id = CellId.from_face_pos_level(0, 0, CellId::MAX_LEVEL)
+    neighbors = cell_id.get_vertex_neighbors(0)
+    neighbors.sort!
+    neighbors.size.should eq 3
+
+    CellId.from_face_pos_level(0, 0, 0).should eq neighbors[0]
+    CellId.from_face_pos_level(4, 0, 0).should eq neighbors[1]
+    CellId.from_face_pos_level(5, 0, 0).should eq neighbors[2]
+
+    cell_id = get_random_cell_id
+    cell_id = cell_id.parent if cell_id.leaf?
+    max_diff = {6, CellId::MAX_LEVEL - cell_id.level - 1}.min
+    level = max_diff == 0 ? cell_id.level : cell_id.level + rand(max_diff)
+    raise "level < cell_id.level" unless level >= cell_id.level
+    raise "level == MAX_LEVEL" if level >= CellId::MAX_LEVEL
+
+    all, expected = {Set(CellId).new, Set(CellId).new}
+    neighbors = cell_id.get_all_neighbors(level)
+    all.concat neighbors
+    cell_id.children(level + 1).each do |child|
+      all.add(child.parent)
+      expected.concat(child.get_vertex_neighbors(level))
+    end
+
+    all.size.should eq expected.size
+    all.should eq expected
+  end
+
+  it "region coverer should work" do
+    coverer = RegionCoverer.new(min_level: 10, max_level: 15, max_cells: 10)
+    min_lat, min_lon = -33.87, 151.20
+    max_lat, max_lon = -33.86, 151.21
+
+    covering = coverer.get_covering(min_lat, min_lon, max_lat, max_lon)
+    covering.each do |cell|
+      puts "Cell ID: #{cell.id}, Token: #{cell.to_token}"
+    end
+  end
+
+  it "generates the correct covering for a given region" do
+    coverer = RegionCoverer.new(min_level: 0, max_level: 30, max_cells: 8)
+
+    min_lat, min_lon = 33.0, -122.1
+    max_lat, max_lon = 33.1, -122.0
+
+    cell_ids = coverer.get_covering(min_lat, min_lon, max_lat, max_lon)
+
+    puts "Number of cells in covering: #{cell_ids.size}"
+    cell_ids.each do |cell|
+      puts "Cell ID: #{cell.id}, Level: #{cell.level}, Bounds: #{cell.bounds.inspect}"
+    end
+
+    ids = cell_ids.map(&.id).sort
+
+    target = [
+      9291041754864156672_u64,
+      9291043953887412224_u64,
+      9291044503643226112_u64,
+      9291045878032760832_u64,
+      9291047252422295552_u64,
+      9291047802178109440_u64,
+      9291051650468806656_u64,
+      9291052200224620544_u64,
+    ]
+
+    ids.should eq(target)
+  end
 end
