@@ -3,9 +3,6 @@ struct S2Cells::CellId
 
   getter id : UInt64
 
-  def initialize(@id)
-  end
-
   def hash : UInt64
     id
   end
@@ -24,7 +21,18 @@ struct S2Cells::CellId
   POS_BITS    = 2 * MAX_LEVEL + 1
   MAX_SIZE    = 1_u64 << MAX_LEVEL
   MAX_SIZE_I  = MAX_SIZE.to_i128
-  WRAP_OFFSET = NUM_FACES << POS_BITS
+  SWAP_MASK   = 0x01_u64
+  INVERT_MASK = 0x02_u64
+  LOOKUP_BITS =    4_u64
+
+  POS_TO_ORIENTATION = {SWAP_MASK, 0_u64, 0_u64, INVERT_MASK | SWAP_MASK}
+  POS_TO_IJ          = { {0_u64, 1_u64, 3_u64, 2_u64},
+                        {0_u64, 2_u64, 3_u64, 1_u64},
+                        {3_u64, 2_u64, 0_u64, 1_u64},
+                        {3_u64, 1_u64, 0_u64, 2_u64} }
+
+  LOOKUP_POS = Array.new((1_u64 << (2 * LOOKUP_BITS + 2)), 0_u64)
+  LOOKUP_IJ  = Array.new((1_u64 << (2 * LOOKUP_BITS + 2)), 0_u64)
 
   def self.lookup_cells(level, i, j, orig_orientation, pos, orientation)
     return lookup_bits(i, j, orig_orientation, pos, orientation) if level == LOOKUP_BITS
@@ -49,24 +57,68 @@ struct S2Cells::CellId
   lookup_cells(0_u64, 0_u64, 0_u64, INVERT_MASK, 0_u64, INVERT_MASK)
   lookup_cells(0_u64, 0_u64, 0_u64, SWAP_MASK | INVERT_MASK, 0_u64, SWAP_MASK | INVERT_MASK)
 
+  def initialize(@id)
+  end
+
+  # ToToken returns a hex-encoded string of the uint64 cell id, with leading
+  # zeros included but trailing zeros stripped.
+  def to_token : String
+    token = @id.to_s(16).rjust(16, '0').rstrip('0')
+    return "X" if token.size == 0
+    token
+  end
+
+  # returns a cell given a hex-encoded string of its uint64 ID
+  def self.from_token(token : String)
+    raise ArgumentError.new("token size was #{token.bytesize}, max size is 16 bytes") if token.bytesize > 16
+    # pad to 16 characters
+    self.new(token.ljust(16, '0').to_u64(16))
+  end
+
+  def parent(level)
+    new_lsb = self.class.lsb_for_level(level)
+    s2 = CellId.new((@id & ((~new_lsb) &+ 1)) | new_lsb)
+
+    raise InvalidLevel.new(level) unless valid?(s2.id)
+    s2
+  end
+
+  def prev
+    CellId.new(@id - (lsb << 1))
+  end
+
+  def next
+    CellId.new(@id + (lsb << 1))
+  end
+
+  getter level : Int32 do
+    return MAX_LEVEL if leaf?
+
+    level = -1
+    x = (@id & 0xffffffff_u64)
+
+    if x != 0
+      level += 16
+    else
+      x = ((@id >> 32) & 0xffffffff_u64)
+    end
+
+    # 2s compliment
+    x &= ((~x) &+ 1)
+
+    level += 8 unless (x & 0x00005555_u64).zero?
+    level += 4 unless (x & 0x00550055_u64).zero?
+    level += 2 unless (x & 0x05050505_u64).zero?
+    level += 1 unless (x & 0x11111111_u64).zero?
+    level
+  end
+
   def self.from_point(p : Point)
     face, u, v = S2Cells.xyz_to_face_uv(p)
     i = st_to_ij(uv_to_st(u))
     j = st_to_ij(uv_to_st(v))
 
     from_face_ij(face, i, j)
-  end
-
-  def self.from_lat_lng(lat : Float64, lng : Float64)
-    from_point LatLng.from_degrees(lat, lng).to_point
-  end
-
-  def self.from_lat_lng(lat : Angle, lng : Angle)
-    from_point LatLng.from_angles(lat, lng).to_point
-  end
-
-  def self.from_lat_lng(lat_lng : LatLng)
-    from_point lat_lng.to_point
   end
 
   def self.from_face_pos_level(face : Int, pos : UInt64, level : Int) : CellId
@@ -84,6 +136,38 @@ struct S2Cells::CellId
 
     lsb_on_level = lsb_for_level(level)
     CellId.new((id & (~lsb_on_level &+ 1)) | lsb_on_level)
+  end
+
+  def self.range_begin(level : Int)
+    from_face_pos_level(0_u64, 0_u64, 0).child_begin(level)
+  end
+
+  def self.range_end(level : Int)
+    from_face_pos_level(5_u64, 0_u64, 0).child_end(level)
+  end
+
+  def self.walk(level : Int, &)
+    begin_cell = range_begin(level)
+    cellid_int = begin_cell.id
+    endid_int = range_end(level).id
+
+    # Doubling the lsb yields the increment between positions at a certain
+    # level as 64-bit IDs. See CellId docstring for bit encoding.
+    increment = begin_cell.lsb << 1
+
+    while cellid_int != endid_int
+      yield new(cellid_int)
+      cellid_int += increment
+    end
+  end
+
+  def self.uv_to_st(u : Float64)
+    return 0.5 * Math.sqrt(1.0 + 3.0 * u) if u >= 0.0
+    1.0 - 0.5 * Math.sqrt(1.0 - 3.0 * u)
+  end
+
+  def self.st_to_ij(s : Float64) : UInt64
+    {0_u64, {MAX_SIZE - 1_u64, (MAX_SIZE * s).floor.to_u64}.min}.max
   end
 
   def self.from_face_ij(face : Int32, i : Int128 | UInt64, j : Int128 | UInt64) : CellId
@@ -126,125 +210,15 @@ struct S2Cells::CellId
   end
 
   def self.from_face_ij_same(face : Int32, i : Int128, j : Int128, same_face : Bool)
-    same_face ? from_face_ij(face, i, j) : from_face_ij_wrap(face, i, j)
-  end
-
-  def to_s(io : IO)
-    io << "CellId: "
-    io << to_token
-  end
-
-  def self.st_to_ij(s : Float64) : UInt64
-    {0_u64, {MAX_SIZE - 1_u64, (MAX_SIZE * s).floor.to_u64}.min}.max
-  end
-
-  def self.lsb_for_level(level : Int)
-    1_u64 << (2 * (MAX_LEVEL - level))
-  end
-
-  def parent : CellId
-    raise "face cells don't have a parent" if face?
-    new_lsb = lsb << 2
-    self.class.new((@id & (~new_lsb &+ 1)) | new_lsb)
-  end
-
-  def parent(level : Int)
-    current_level = self.level
-    raise "invalid level: #{level}" unless (0...current_level).includes?(level)
-    new_lsb = self.class.lsb_for_level(level)
-    self.class.new((@id & (~new_lsb &+ 1)) | new_lsb)
-  end
-
-  # def child(pos : Int)
-  #  raise "Invalid cell id" unless valid?
-  #  raise "Child position out of range" if leaf?
-  #  new_lsb = lsb >> 2
-  #  self.class.new(@id &+ (2 * pos + 1 - 4) &* new_lsb)
-  # end
-  #
-  def contains(other : CellId) : Bool
-    raise "Invalid cell id" unless valid?
-    raise "Invalid cell id" unless other.valid?
-    other >= range_min && other <= range_max
-  end
-
-  def intersects(other : CellId) : Bool
-    raise "Invalid cell id" unless valid?
-    raise "Invalid cell id" unless other.valid?
-    other.range_min <= range_max && other.range_max >= range_min
-  end
-
-  def face?
-    (@id & (self.class.lsb_for_level(0) - 1)) == 0
-  end
-
-  def self.valid?(cell_id : CellId)
-    # 6 is an invalid face
-    return false unless cell_id.face < NUM_FACES
-    (cell_id.lsb & 0x1555555555555555_u64) != 0
-  end
-
-  private def valid?(cell_id : UInt64)
-    self.class.valid? CellId.new(cell_id)
-  end
-
-  def valid?
-    self.class.valid? self
-  end
-
-  def lsb
-    @id & (~@id &+ 1) # This is equivalent to (@id & -@id) for signed integers
-  end
-
-  def face : Int32
-    # Shift right by 61 bits to move the top 3 bits to the least significant bit position.
-    # Mask with binary 111 to isolate these three bits.
-    (@id >> POS_BITS).to_i & 0b111
-  end
-
-  def pos : UInt64
-    @id & (UInt64::MAX >> FACE_BITS)
+    if same_face
+      from_face_ij(face, i, j)
+    else
+      from_face_ij_wrap(face, i, j)
+    end
   end
 
   def leaf?
-    (@id & 1) != 0
-  end
-
-  def level : Int32
-    return MAX_LEVEL if leaf?
-
-    level = -1
-    x = (@id & 0xffffffff_u64)
-
-    if x != 0
-      level += 16
-    else
-      x = ((@id >> 32) & 0xffffffff_u64)
-    end
-
-    # 2s compliment
-    x &= (~x &+ 1)
-
-    level += 8 unless (x & 0x00005555_u64).zero?
-    level += 4 unless (x & 0x00550055_u64).zero?
-    level += 2 unless (x & 0x05050505_u64).zero?
-    level += 1 unless (x & 0x11111111_u64).zero?
-    level
-  end
-
-  # ToToken returns a hex-encoded string of the uint64 cell id, with leading
-  # zeros included but trailing zeros stripped.
-  def to_token : String
-    token = @id.to_s(16).rjust(16, '0').rstrip('0')
-    return "X" if token.size == 0
-    token
-  end
-
-  # returns a cell given a hex-encoded string of its uint64 ID
-  def self.from_token(token : String)
-    raise ArgumentError.new("token size was #{token.bytesize}, max size is 16 bytes") if token.bytesize > 16
-    # pad to 16 characters
-    self.new(token.ljust(16, '0').to_u64(16))
+    @id & 1 != 0
   end
 
   def child_begin
@@ -268,11 +242,11 @@ struct S2Cells::CellId
   end
 
   def prev
-    CellId.new(@id &- (lsb << 1))
+    self.class.new(@id &- (lsb << 1))
   end
 
   def next
-    CellId.new(@id &+ (lsb << 1))
+    self.class.new(@id &+ (lsb << 1))
   end
 
   def children(level : Int32? = nil, &)
@@ -296,6 +270,23 @@ struct S2Cells::CellId
     cells
   end
 
+  def face?
+    (@id & (self.class.lsb_for_level(0) - 1)) == 0
+  end
+
+  def parent : CellId
+    raise "face cells don't have a parent" if face?
+    new_lsb = lsb << 2
+    self.class.new((@id & (~new_lsb &+ 1)) | new_lsb)
+  end
+
+  def parent(level : Int)
+    current_level = self.level
+    raise "invalid level: #{level}" unless (0...current_level).includes?(level)
+    new_lsb = self.class.lsb_for_level(level)
+    self.class.new((@id & (~new_lsb &+ 1)) | new_lsb)
+  end
+
   def range_min
     self.class.new(@id &- (lsb &- 1))
   end
@@ -304,88 +295,33 @@ struct S2Cells::CellId
     self.class.new(@id &+ (lsb &- 1))
   end
 
-  def self.range_begin(level : Int)
-    from_face_pos_level(0_u64, 0_u64, 0).child_begin(level)
+  def self.valid?(cell_id : CellId)
+    # 6 is an invalid face
+    return false unless cell_id.face < NUM_FACES
+    (cell_id.lsb & 0x1555555555555555_u64) != 0
   end
 
-  def self.range_end(level : Int)
-    from_face_pos_level(5_u64, 0_u64, 0).child_end(level)
+  private def valid?(cell_id : UInt64)
+    self.class.valid? CellId.new(cell_id)
   end
 
-  def self.walk(level : Int, &)
-    begin_cell = range_begin(level)
-    cellid_int = begin_cell.id
-    endid_int = range_end(level).id
-
-    # Doubling the lsb yields the increment between positions at a certain
-    # level as 64-bit IDs. See CellId docstring for bit encoding.
-    increment = begin_cell.lsb << 1
-
-    while cellid_int != endid_int
-      yield new(cellid_int)
-      cellid_int += increment
-    end
+  def valid?
+    self.class.valid? self
   end
 
-  def self.none
-    new
+  def lsb
+    @id & (~@id &+ 1) # This is equivalent to (@id & -@id) for signed integers
   end
 
-  # TODO:: prev_wrap, next_wrap, advance_wrap, advance
-
-  def self.uv_to_st(u : Float64)
-    return 0.5 * Math.sqrt(1.0 + 3.0 * u) if u >= 0.0
-    1.0 - 0.5 * Math.sqrt(1.0 - 3.0 * u)
+  def self.lsb_for_level(level)
+    1_u64 << (2 * (MAX_LEVEL - level))
   end
 
-  def prev
-    self.class.new(@id &- (lsb << 1))
+  def get_size_ij(level = self.level)
+    1_u64 << (MAX_LEVEL - level)
   end
 
-  def next
-    self.class.new(@id &+ (lsb << 1))
-  end
-
-  def to_lat_lng : LatLng
-    LatLng.from_point(self.to_point_raw)
-  end
-
-  def to_point_raw : Point
-    face, si, ti = self.get_center_si_ti
-    S2Cells.face_uv_to_xyz(
-      face,
-      self.class.st_to_uv((0.5 / MAX_SIZE) * si),
-      self.class.st_to_uv((0.5 / MAX_SIZE) * ti),
-    )
-  end
-
-  def to_point : Point
-    to_point_raw.normalize
-  end
-
-  def get_center_si_ti
-    face, i, j, orientation = self.to_face_ij_orientation
-
-    if self.leaf?
-      delta = 1
-    elsif ((i ^ (self.id >> 2)) & 1) != 0_u64
-      delta = 2
-    else
-      delta = 0
-    end
-
-    {face, 2_u64 &* i &+ delta, 2_u64 &* j &+ delta}
-  end
-
-  def get_center_uv
-    face, si, ti = get_center_si_ti
-    {
-      self.class.st_to_uv((0.5 / MAX_SIZE) * si),
-      self.class.st_to_uv((0.5 / MAX_SIZE) * ti),
-    }
-  end
-
-  def to_face_ij_orientation : Tuple(Int32, UInt64, UInt64, Int32)
+  def to_face_ij_orientation
     i, j = 0_u64, 0_u64
     face = self.face
     bits = face & SWAP_MASK
@@ -414,13 +350,19 @@ struct S2Cells::CellId
     end
     orientation = bits
 
-    {face, i, j, orientation.to_i}
+    return {face, i, j, orientation}
+  end
+
+  getter face : Int32 do
+    # Shift right by 61 bits to move the top 3 bits to the least significant bit position.
+    # Mask with binary 111 to isolate these three bits.
+    (@id >> POS_BITS).to_i & 0b111
   end
 
   def get_edge_neighbors : Array(CellId)
     level = self.level
-    size = get_size_ij(level)
-    face, i, j, orientation = to_face_ij_orientation
+    size = self.get_size_ij(level)
+    face, i, j, orientation = self.to_face_ij_orientation
 
     i = i.to_i128
     j = j.to_i128
@@ -515,45 +457,43 @@ struct S2Cells::CellId
     neighbors
   end
 
-  def get_size_ij(level = self.level)
-    1_u64 << (MAX_LEVEL - level)
+  getter level : Int32 do
+    if leaf?
+      30
+    else
+      x = (@id & 0xffffffff_u64)
+      level = -1
+      if !x.zero?
+        level += 16
+      else
+        x = ((@id >> 32) & 0xffffffff_u64)
+      end
+
+      x &= (~x &+ 1)
+      level += 8 if x & 0x00005555_u64 != 0
+      level += 4 if x & 0x00550055_u64 != 0
+      level += 2 if x & 0x05050505_u64 != 0
+      level += 1 if x & 0x11111111_u64 != 0
+      level
+    end
   end
 
-  def self.max_edge
-    LengthMetric.new(max_angle_span.deriv)
+  getter pos : UInt64 do
+    @id & (UInt64::MAX >> FACE_BITS)
   end
 
-  def self.max_angle_span
-    # LINEAR_PROJECTION
-    # LengthMetric.new(2)
+  def get_center_si_ti
+    face, i, j, orientation = self.to_face_ij_orientation
 
-    # TAN_PROJECTION
-    # LengthMetric.new(Math::PI / 2)
+    if self.leaf?
+      delta = 1
+    elsif ((i ^ (self.id >> 2)) & 1) != 0_u64
+      delta = 2
+    else
+      delta = 0
+    end
 
-    # QUADRATIC_PROJECTION
-    LengthMetric.new(1.704897179199218452)
-  end
-
-  def self.max_diag
-    # LINEAR_PROJECTION
-    # LengthMetric.new(2 * Math.sqrt(2))
-
-    # TAN_PROJECTION
-    # LengthMetric.new(Math::PI * Math.sqrt(2.0 / 3.0))
-
-    # QUADRATIC_PROJECTION
-    LengthMetric.new(2.438654594434021032)
-  end
-
-  def self.min_width
-    # LINEAR_PROJECTION
-    # LengthMetric.new(Math.sqrt(2))
-
-    # TAN_PROJECTION
-    # LengthMetric.new(Math::PI / 2 * Math.sqrt(2))
-
-    # QUADRATIC_PROJECTION
-    LengthMetric.new(2 * Math.sqrt(2) / 3)
+    {face, 2_u64 &* i &+ delta, 2_u64 &* j &+ delta}
   end
 
   def self.st_to_uv(s : Float64) : Float64
@@ -562,5 +502,78 @@ struct S2Cells::CellId
     else
       (1.0 / 3.0) * (1 - 4 * (1 - s) * (1 - s))
     end
+  end
+
+  def to_point_raw
+    face, si, ti = self.get_center_si_ti
+    S2Cells.face_uv_to_xyz(
+      face,
+      self.class.st_to_uv((0.5 / MAX_SIZE) * si),
+      self.class.st_to_uv((0.5 / MAX_SIZE) * ti),
+    )
+  end
+
+  def self.from_lat_lng(lat : Float64, lng : Float64)
+    from_point LatLng.from_degrees(lat, lng).to_point
+  end
+
+  def self.from_lat_lng(lat : Angle, lng : Angle)
+    from_point LatLng.from_angles(lat, lng).to_point
+  end
+
+  def self.from_lat_lng(lat_lng : LatLng)
+    from_point lat_lng.to_point
+  end
+
+  def to_lat_lng : LatLng
+    LatLng.from_point(self.to_point_raw)
+  end
+
+  private def cell_child_position(x : Float64, y : Float64, rx : Int32, ry : Int32, level : Int32) : Tuple(Float64, Float64)
+    half_size = 1.0 / (1 << (level + 1))
+    if rx == 0 && ry == 0
+      {x, y}
+    elsif rx == 0 && ry == 1
+      {x, y + half_size}
+    elsif rx == 1 && ry == 0
+      {x + half_size, y}
+    else # rx == 1 && ry == 1
+      {x + half_size, y + half_size}
+    end
+  end
+
+  private def lat_lng_from_xyz(x : Float64, y : Float64, z : Float64) : S2Cells::LatLng
+    lat = Math.atan2(z, Math.sqrt(x*x + y*y)) * 180 / Math::PI
+    lng = Math.atan2(y, x) * 180 / Math::PI
+    S2Cells::LatLng.new(lat, lng)
+  end
+
+  def bounds : Bounds
+    # Get the center point of the cell
+    center = self.to_lat_lng
+
+    # Calculate the size of the cell at this level
+    size = 360.0 / (1 << self.level)
+
+    # Calculate the bounds
+    lat_lo = center.lat - size / 2
+    lat_hi = center.lat + size / 2
+    lng_lo = center.lng - size / 2
+    lng_hi = center.lng + size / 2
+
+    # Clamp latitude to valid range
+    lat_lo = Math.max(-90.0, lat_lo)
+    lat_hi = Math.min(90.0, lat_hi)
+
+    # Handle longitude wraparound
+    if lng_lo < -180.0
+      lng_lo += 360.0
+      lng_hi += 360.0
+    elsif lng_hi > 180.0
+      lng_lo -= 360.0
+      lng_hi -= 360.0
+    end
+
+    Bounds.new(lat_lo, lat_hi, lng_lo, lng_hi)
   end
 end
