@@ -8,18 +8,17 @@ module S2Cells
     end
   end
 
-  def self.at(lat : Float64, lng : Float64)
-    CellId.from_lat_lng(LatLng.from_degrees(lat, lng))
+  def self.at(point : LatLng) : CellId
+    CellId.from_lat_lng(point)
   end
 
-  struct Bounds
-    property lat_lo : Float64
-    property lat_hi : Float64
-    property lng_lo : Float64
-    property lng_hi : Float64
+  def self.at(lat : Float64, lng : Float64) : CellId
+    at LatLng.from_degrees(lat, lng)
+  end
 
-    def initialize(@lat_lo, @lat_hi, @lng_lo, @lng_hi)
-    end
+  def self.in(p1 : LatLng, p2 : LatLng) : Array(CellId)
+    coverer = RegionCoverer.new
+    coverer.get_covering(LatLngRect.from_point_pair(p1, p2))
   end
 
   LINEAR_PROJECTION    = 0
