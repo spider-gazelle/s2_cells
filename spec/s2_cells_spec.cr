@@ -186,8 +186,8 @@ module S2Cells
   end
 
   it "should work with faces" do
-    edge_counts = Hash(Int32, Int32).new(0)
-    vertex_counts = Hash(Int32, Int32).new(0)
+    edge_counts = Hash(Point, Int32).new(0)
+    vertex_counts = Hash(Point, Int32).new(0)
 
     6.times do |face|
       cell_id = CellId.from_face_pos_level(face, 0, 0)
@@ -198,7 +198,27 @@ module S2Cells
 
       cell.orientation.should eq(face & SWAP_MASK)
       cell.leaf?.should eq false
+
+      4.times do |k|
+        edge_counts[cell.get_edge_raw(k)] += 1
+        vertex_counts[cell.get_vertex_raw(k)] += 1
+
+        cell.get_vertex_raw(k).dot_prod(cell.get_edge_raw(k)).should eq 0.0
+        cell.get_vertex_raw((k + 1) & 3)
+          .dot_prod(cell.get_edge_raw(k))
+          .should eq 0.0
+
+        cell
+          .get_vertex_raw(k)
+          .cross_prod(cell.get_vertex_raw((k + 1) & 3))
+          .normalize
+          .dot_prod(cell.get_edge(k))
+          .should be_close(1.0, 0.000001)
+      end
     end
+
+    edge_counts.values.each { |count| count.should eq 2 }
+    vertex_counts.values.each { |count| count.should eq 3 }
   end
 
   it "generates the correct covering for a given region" do
@@ -220,7 +240,6 @@ module S2Cells
       9291051650468806656_u64,
       9291052200224620544_u64,
     ]
-    target.sort!
     ids.should eq(target)
   end
 end

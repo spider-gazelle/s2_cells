@@ -85,7 +85,7 @@ struct S2Cells::Cell
   end
 
   def get_vertex_raw(k : Int32) : Point
-    face_uv_to_xyz(@face, @uv[0][(k >> 1) ^ (k & 1)], @uv[1][k >> 1])
+    S2Cells.face_uv_to_xyz(@face, @uv[0][(k >> 1) ^ (k & 1)], @uv[1][k >> 1])
   end
 
   def exact_area : Float64
@@ -230,17 +230,59 @@ struct S2Cells::Cell
   def get_v_axis(face : Int)
     case face
     when 0
-      return Point.new(0, 0, 1)
+      Point.new(0, 0, 1)
     when 1
-      return Point.new(0, 0, 1)
+      Point.new(0, 0, 1)
     when 2
-      return Point.new(0, -1, 0)
+      Point.new(0, -1, 0)
     when 3
-      return Point.new(0, -1, 0)
+      Point.new(0, -1, 0)
     when 4
-      return Point.new(1, 0, 0)
+      Point.new(1, 0, 0)
     else
-      return Point.new(1, 0, 0)
+      Point.new(1, 0, 0)
+    end
+  end
+
+  # Vector normal to the positive v-axis and the plane through the origin.
+  #
+  # The vector is normal to the positive v-axis and a plane that contains the
+  # origin and the v-axis.
+  def get_u_norm(face : Int, u : Float64)
+    case face
+    when 0
+      Point.new(u, -1, 0)
+    when 1
+      Point.new(1, u, 0)
+    when 2
+      Point.new(1, 0, u)
+    when 3
+      Point.new(-u, 0, 1)
+    when 4
+      Point.new(0, -u, 1)
+    else
+      Point.new(0, -1, -u)
+    end
+  end
+
+  # Vector normal to the positive u-axis and the plane through the origin.
+  #
+  # The vector is normal to the positive u-axis and a plane that contains the
+  # origin and the u-axis.
+  def get_v_norm(face, v)
+    case face
+    when 0
+      Point.new(-v, 0, 1)
+    when 1
+      Point.new(0, -v, 1)
+    when 2
+      Point.new(0, -1, -v)
+    when 3
+      Point.new(v, -1, 0)
+    when 4
+      Point.new(1, v, 0)
+    else
+      Point.new(1, 0, v)
     end
   end
 end
