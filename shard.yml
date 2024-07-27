@@ -1,7 +1,11 @@
 name: s2_cells
-version: 1.0.1
+version: 2.0.0
 crystal: ">= 0.36.1"
 
-development_dependencies:
-  ameba:
-    github: veelenga/ameba
+dependencies:
+  priority-queue:
+    github: spider-gazelle/priority-queue
+
+# development_dependencies:
+#  ameba:
+#    github: veelenga/ameba

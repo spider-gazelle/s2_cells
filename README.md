@@ -24,14 +24,21 @@ Useful for things like storing points [in InfluxDB](https://docs.influxdata.com/
 
 require "s2_cells"
 
+# index a location in your database
 lat = -33.870456
 lon = 151.208889
 level = 24
 
 cell = S2Cells.at(lat, lon).parent(level)
 token = cell.to_token # => "3ba32f81"
+# or
+id = cell.id # => Int64
 
-# Or a little more direct
-S2Cells::LatLon.new(lat, lon).to_token(level)
+# find all the indexes in an area
+p1 = S2Cells::LatLng.from_degrees(33.0, -122.0)
+p2 = S2Cells::LatLng.from_degrees(33.1, -122.1)
+cells = S2Cells.in(p1, p2) # => Array(CellId)
 
+# then can search your index:
+# loc_index = ANY(cells.map(&.id))
 ```
