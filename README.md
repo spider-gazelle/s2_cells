@@ -42,3 +42,7 @@ cells = S2Cells.in(p1, p2) # => Array(CellId)
 # then can search your index:
 # loc_index = ANY(cells.map(&.id))
 ```
+
+## Reference
+
+a crystal clone of https://github.com/sidewalklabs/s2sphere
